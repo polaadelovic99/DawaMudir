@@ -14,7 +14,8 @@ set
   file_size_limit = excluded.file_size_limit,
   allowed_mime_types = excluded.allowed_mime_types;
 
-alter table storage.objects enable row level security;
+-- storage.objects already has RLS enabled by default on every Supabase project, and the
+-- migration role is not its owner, so enabling it here fails on Supabase Cloud - only add policies.
 
 create policy verification_documents_storage_insert_own
   on storage.objects
