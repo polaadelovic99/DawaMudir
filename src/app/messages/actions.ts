@@ -37,9 +37,19 @@ type NotificationRecipient = {
   full_name: string;
 };
 
+const MAX_MESSAGE_LENGTH = 4000;
+const RATE_LIMIT_WINDOW_SECONDS = 3;
+const RATE_LIMIT_MAX_MESSAGES = 5;
+
+function normalizeDigits(value: string) {
+  return value
+    .replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 0x0660))
+    .replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 0x06f0));
+}
+
 function containsPhone(body: string) {
-  const compact = body.replace(/[\s-]/g, "");
-  return /(?:\+?20|0)?1[0125]\d{8}/.test(compact) || /\d{8,}/.test(compact);
+  const compact = normalizeDigits(body).replace(/[\s().-]/g, "");
+  return /(?:\+?20|0)?1[0125]\d{8}/.test(compact);
 }
 
 async function conversationUrl(conversationId: string) {
@@ -62,6 +72,10 @@ export async function sendMessage(
 
   if (!messageBody) {
     return { error: "اكتب رسالة أولًا.", message: null };
+  }
+
+  if (messageBody.length > MAX_MESSAGE_LENGTH) {
+    return { error: "الرسالة طويلة جدًا. اختصرها وحاول مرة أخرى.", message: null };
   }
 
   const supabase = await createClient();
@@ -91,6 +105,21 @@ export async function sendMessage(
     return { error: "المحادثة غير متاحة.", message: null };
   }
 
+  const rateLimitSince = new Date(Date.now() - RATE_LIMIT_WINDOW_SECONDS * 1000).toISOString();
+  const { count: recentMessageCount, error: rateLimitError } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("sender_id", user.id)
+    .gt("created_at", rateLimitSince);
+
+  if (rateLimitError) {
+    return { error: "تعذّر إرسال الرسالة. حاول مرة أخرى.", message: null };
+  }
+
+  if ((recentMessageCount ?? 0) >= RATE_LIMIT_MAX_MESSAGES) {
+    return { error: "أرسلت رسائل كثيرة بسرعة. انتظر لحظة وحاول مرة أخرى.", message: null };
+  }
+
   const { data: message, error: messageError } = await supabase
     .from("messages")
     .insert({
@@ -106,29 +135,41 @@ export async function sendMessage(
     return { error: "تعذّر إرسال الرسالة. حاول مرة أخرى.", message: null };
   }
 
+  const { count: previousUnreadCount, error: previousUnreadError } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversation.id)
+    .neq("sender_id", recipientId)
+    .is("read_at", null)
+    .lt("created_at", message.created_at);
+
+  const shouldSendNotification = !previousUnreadError && (previousUnreadCount ?? 0) === 0;
+
   revalidatePath("/messages");
   revalidatePath(`/messages/${conversation.id}`);
 
-  const [senderResult, recipientResult] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("full_name")
-      .eq("id", user.id)
-      .maybeSingle<ProfileName>(),
-    supabase.rpc("get_notification_recipient", { p_profile_id: recipientId }),
-  ]);
-  const senderProfile = senderResult.data;
-  const recipientRows = recipientResult.data as NotificationRecipient[] | null;
+  if (shouldSendNotification) {
+    const [senderResult, recipientResult] = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("id", user.id)
+        .maybeSingle<ProfileName>(),
+      supabase.rpc("get_notification_recipient", { p_profile_id: recipientId }),
+    ]);
+    const senderProfile = senderResult.data;
+    const recipientRows = recipientResult.data as NotificationRecipient[] | null;
 
-  const recipient = recipientRows?.[0];
+    const recipient = recipientRows?.[0];
 
-  if (recipient?.notification_email && recipient.email_notifications_enabled) {
-    void sendNewMessageEmail({
-      to: recipient.notification_email,
-      recipientName: recipient.full_name,
-      senderName: senderProfile?.full_name ?? "مستخدم",
-      conversationUrl: await conversationUrl(conversation.id),
-    });
+    if (recipient?.notification_email && recipient.email_notifications_enabled) {
+      void sendNewMessageEmail({
+        to: recipient.notification_email,
+        recipientName: recipient.full_name,
+        senderName: senderProfile?.full_name ?? "مستخدم",
+        conversationUrl: await conversationUrl(conversation.id),
+      });
+    }
   }
 
   return { error: "", message };
