@@ -89,6 +89,12 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                     الرسائل
                     <UnreadBadge initialUnreadCount={initialUnreadCount} currentUserId={user.id} />
                   </Link>
+                  <Link
+                    href="/settings/verification"
+                    className="font-semibold text-foreground/70 hover:text-foreground"
+                  >
+                    حالة التوثيق
+                  </Link>
                   <form action={signOut}>
                     <button
                       type="submit"
