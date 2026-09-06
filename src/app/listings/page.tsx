@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import ListingCard, { type ListingCardData } from "./ListingCard";
 import {
   attendanceLabels,
   durationLabels,
@@ -9,9 +10,7 @@ import {
   isWithWithout,
   kindLabels,
   scheduleLabels,
-  type DurationType,
   type ListingKind,
-  type WithWithout,
 } from "./constants";
 
 type SearchParams = {
@@ -28,24 +27,6 @@ type Governorate = {
   name_ar: string;
 };
 
-type MaybeRelation<T> = T | T[] | null;
-
-type ListingCard = {
-  id: string;
-  kind: ListingKind;
-  author_id: string;
-  duration_type: DurationType | null;
-  duration_months: number | null;
-  attendance: WithWithout | null;
-  schedule: WithWithout | null;
-  imported: WithWithout | null;
-  salary_amount: number | null;
-  notes: string | null;
-  created_at: string;
-  governorates: MaybeRelation<{ name_ar: string }>;
-  pharmacies: MaybeRelation<{ name: string }>;
-};
-
 type PublicProfile = {
   id: string;
   full_name: string;
@@ -53,10 +34,6 @@ type PublicProfile = {
 
 function firstValue(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
-}
-
-function relationOne<T>(value: MaybeRelation<T>) {
-  return Array.isArray(value) ? (value[0] ?? null) : value;
 }
 
 function parseGovernorate(value: string | undefined) {
@@ -78,30 +55,6 @@ function buildKindHref(kind: ListingKind, filters: Record<string, string | undef
   });
 
   return `/listings?${params.toString()}`;
-}
-
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("ar-EG", { dateStyle: "medium" }).format(new Date(value));
-}
-
-function formatMoney(value: number | null) {
-  return value === null ? "غير محدد" : `${value.toLocaleString("ar-EG")} جنيه`;
-}
-
-function durationText(listing: ListingCard) {
-  if (!listing.duration_type) {
-    return "غير محدد";
-  }
-
-  if (listing.duration_type === "temporary" && listing.duration_months) {
-    return `${durationLabels.temporary} - ${listing.duration_months.toLocaleString("ar-EG")} شهر`;
-  }
-
-  return durationLabels[listing.duration_type];
-}
-
-function optionText(value: WithWithout | null, labels: Record<WithWithout, string>) {
-  return value ? labels[value] : "غير محدد";
 }
 
 export default async function ListingsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
@@ -167,7 +120,7 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
     throw new Error(listingsResult.error.message);
   }
 
-  const listings = (listingsResult.data ?? []) as ListingCard[];
+  const listings = (listingsResult.data ?? []) as ListingCardData[];
   const authorNames = new Map<string, string>();
 
   if (selectedKind === "manager_available" && listings.length > 0) {
@@ -318,35 +271,11 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
         ) : (
           <div className="grid gap-4">
             {listings.map((listing) => (
-              <Link
+              <ListingCard
                 key={listing.id}
-                href={`/listings/${listing.id}`}
-                className="rounded-md border border-foreground/15 p-5 text-right transition hover:border-foreground/50"
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-                  <div className="space-y-2">
-                    <h2 className="text-xl font-bold">{kindLabels[listing.kind]}</h2>
-                    <p className="text-foreground/70">
-                      {selectedKind === "manager_wanted"
-                        ? relationOne(listing.pharmacies)?.name ?? "صيدلية غير محددة"
-                        : authorNames.get(listing.author_id) ?? "ناشر غير محدد"}
-                    </p>
-                    {listing.notes ? <p className="max-w-3xl text-sm">{listing.notes}</p> : null}
-                  </div>
-                  <div className="text-sm text-foreground/60">{formatDate(listing.created_at)}</div>
-                </div>
-
-                <div className="mt-4 grid gap-3 text-sm text-foreground/75 md:grid-cols-3">
-                  <span>
-                    المحافظة: {relationOne(listing.governorates)?.name_ar ?? "غير محددة"}
-                  </span>
-                  <span>المدة: {durationText(listing)}</span>
-                  <span>الراتب: {formatMoney(listing.salary_amount)}</span>
-                  <span>الحضور: {optionText(listing.attendance, attendanceLabels)}</span>
-                  <span>الجدول: {optionText(listing.schedule, scheduleLabels)}</span>
-                  <span>المستورد: {optionText(listing.imported, importedLabels)}</span>
-                </div>
-              </Link>
+                listing={listing}
+                authorName={authorNames.get(listing.author_id)}
+              />
             ))}
           </div>
         )}

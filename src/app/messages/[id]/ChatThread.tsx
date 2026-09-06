@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { sendMessage, type MessageRow } from "../actions";
 
@@ -10,6 +10,7 @@ type ChatThreadProps = {
   currentUserId: string;
   otherParticipantName: string;
   initialMessages: MessageRow[];
+  dealPanel: ReactNode;
 };
 
 function formatTime(value: string) {
@@ -30,6 +31,7 @@ export default function ChatThread({
   currentUserId,
   otherParticipantName,
   initialMessages,
+  dealPanel,
 }: ChatThreadProps) {
   const supabase = useMemo(() => createClient(), []);
   const [messages, setMessages] = useState(() => sortMessages(initialMessages));
@@ -133,6 +135,8 @@ export default function ChatThread({
           <p className="mt-1 text-sm text-foreground/60">محادثة مباشرة</p>
         </div>
       </div>
+
+      {dealPanel}
 
       <div className="flex min-h-[45vh] flex-1 flex-col gap-3 rounded-md border border-foreground/15 p-4">
         {messages.length === 0 ? (

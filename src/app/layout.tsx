@@ -80,6 +80,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
               <Link href="/listings" className="font-semibold text-foreground/70 hover:text-foreground">
                 الإعلانات
               </Link>
+              <Link href="/guide" className="font-semibold text-foreground/70 hover:text-foreground">
+                دليل الإجراءات
+              </Link>
               {user ? (
                 <>
                   <Link

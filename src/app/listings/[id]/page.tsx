@@ -41,7 +41,20 @@ type ListingDetail = {
 };
 
 type PublicProfile = {
+  id?: string;
   full_name: string;
+};
+
+type ReviewRow = {
+  id: string;
+  author_id: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+};
+
+type ReviewRating = {
+  rating: number;
 };
 
 function relationOne<T>(value: MaybeRelation<T>) {
@@ -157,6 +170,50 @@ export default async function ListingDetailPage({ params }: { params: Promise<{ 
     authorName = profile?.full_name ?? authorName;
   }
 
+  const [reviewsResult, ratingsResult] = await Promise.all([
+    supabase
+      .from("reviews")
+      .select("id, author_id, rating, comment, created_at", { count: "exact" })
+      .eq("target_id", listing.author_id)
+      .order("created_at", { ascending: false })
+      .limit(10),
+    supabase.from("reviews").select("rating").eq("target_id", listing.author_id),
+  ]);
+
+  if (reviewsResult.error) {
+    throw new Error(reviewsResult.error.message);
+  }
+
+  if (ratingsResult.error) {
+    throw new Error(ratingsResult.error.message);
+  }
+
+  const reviews = (reviewsResult.data ?? []) as ReviewRow[];
+  const reviewRatings = (ratingsResult.data ?? []) as ReviewRating[];
+  const reviewCount = reviewsResult.count ?? reviewRatings.length;
+  const reviewerNames = new Map<string, string>();
+
+  if (reviews.length > 0) {
+    const reviewerIds = [...new Set(reviews.map((review) => review.author_id))];
+    const { data: reviewers, error: reviewersError } = await supabase
+      .from("public_profiles")
+      .select("id, full_name")
+      .in("id", reviewerIds);
+
+    if (reviewersError) {
+      throw new Error(reviewersError.message);
+    }
+
+    ((reviewers ?? []) as Required<PublicProfile>[]).forEach((profile) => {
+      reviewerNames.set(profile.id, profile.full_name);
+    });
+  }
+
+  const averageRating =
+    reviewRatings.length === 0
+      ? 0
+      : reviewRatings.reduce((total, review) => total + review.rating, 0) / reviewRatings.length;
+
   return (
     <main className="flex flex-1 flex-col items-center p-8">
       <article className="flex w-full max-w-4xl flex-col gap-8 text-right">
@@ -240,6 +297,35 @@ export default async function ListingDetailPage({ params }: { params: Promise<{ 
             </dl>
           </section>
         )}
+
+        {reviews.length > 0 ? (
+          <section className="space-y-4">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-xl font-bold">التقييمات</h2>
+              <p className="text-sm text-foreground/60">
+                متوسط {averageRating.toLocaleString("ar-EG", { maximumFractionDigits: 1 })} من 5 -
+                {reviewCount.toLocaleString("ar-EG")} تقييم
+              </p>
+            </div>
+            <div className="grid gap-3">
+              {reviews.map((review) => (
+                <article key={review.id} className="rounded-md border border-foreground/15 px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="font-semibold">{reviewerNames.get(review.author_id) ?? "مستخدم"}</p>
+                    <p className="text-sm text-foreground/60">
+                      {review.rating.toLocaleString("ar-EG")} من 5 - {formatDate(review.created_at)}
+                    </p>
+                  </div>
+                  {review.comment ? (
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-foreground/75">
+                      {review.comment}
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="space-y-3">
           <h2 className="text-xl font-bold">ملاحظات</h2>
