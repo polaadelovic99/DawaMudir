@@ -187,3 +187,76 @@ export async function createListing(_: ActionState, formData: FormData): Promise
 
   redirect(`/listings/${listing.id}`);
 }
+
+export async function startConversation(listingId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    redirect("/login");
+  }
+
+  const { data: listing, error: listingError } = await supabase
+    .from("listings")
+    .select("id, author_id")
+    .eq("id", listingId)
+    .eq("status", "active")
+    .maybeSingle<{ id: string; author_id: string }>();
+
+  if (listingError || !listing) {
+    redirect(`/listings/${listingId}`);
+  }
+
+  if (listing.author_id === user.id) {
+    redirect(`/listings/${listing.id}`);
+  }
+
+  const [participantA, participantB] = [user.id, listing.author_id].sort();
+
+  const { data: existingConversation, error: existingConversationError } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("listing_id", listing.id)
+    .eq("participant_a", participantA)
+    .eq("participant_b", participantB)
+    .maybeSingle<{ id: string }>();
+
+  if (existingConversationError) {
+    redirect(`/listings/${listing.id}`);
+  }
+
+  if (existingConversation) {
+    redirect(`/messages/${existingConversation.id}`);
+  }
+
+  const { data: conversation, error: conversationError } = await supabase
+    .from("conversations")
+    .insert({
+      listing_id: listing.id,
+      participant_a: participantA,
+      participant_b: participantB,
+    })
+    .select("id")
+    .single<{ id: string }>();
+
+  if (conversationError || !conversation) {
+    const { data: racedConversation } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("listing_id", listing.id)
+      .eq("participant_a", participantA)
+      .eq("participant_b", participantB)
+      .maybeSingle<{ id: string }>();
+
+    if (racedConversation) {
+      redirect(`/messages/${racedConversation.id}`);
+    }
+
+    redirect(`/listings/${listing.id}`);
+  }
+
+  redirect(`/messages/${conversation.id}`);
+}

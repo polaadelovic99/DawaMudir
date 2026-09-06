@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { startConversation } from "../actions";
 import {
   attendanceLabels,
   durationLabels,
@@ -126,6 +127,9 @@ export default async function ListingDetailPage({ params }: { params: Promise<{ 
   }
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const { data, error } = await supabase
     .from("listings")
     .select(
@@ -244,16 +248,16 @@ export default async function ListingDetailPage({ params }: { params: Promise<{ 
           </p>
         </section>
 
-        <div className="flex flex-col gap-2">
-          <button
-            type="button"
-            disabled
-            className="rounded-md bg-foreground px-5 py-3 font-semibold text-background opacity-60"
-          >
-            بدء المحادثة
-          </button>
-          <p className="text-center text-sm text-foreground/60">قريبًا</p>
-        </div>
+        {user?.id !== listing.author_id ? (
+          <form action={startConversation.bind(null, listing.id)}>
+            <button
+              type="submit"
+              className="w-full rounded-md bg-foreground px-5 py-3 font-semibold text-background transition hover:opacity-90"
+            >
+              بدء المحادثة
+            </button>
+          </form>
+        ) : null}
       </article>
     </main>
   );
